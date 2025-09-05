@@ -1,0 +1,47 @@
+{
+  "name": "mcp-context-bank-server",
+  "version": "1.0.0",
+  "description": "MCP server for fetching markdown context files from configurable git repositories with authentication support",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mcp-context-bank-server": "dist/index.js"
+  },
+  "repository": "git@github.com:ivanbaha/mcp.git",
+  "author": "Ivan Baha <foboss6@gmail.com>",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "context",
+    "git",
+    "markdown"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "yarn build"
+  },
+  "files": [
+    "dist/**/*",
+    "examples/**/*",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "simple-git": "^3.28.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
