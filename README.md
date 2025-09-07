@@ -37,11 +37,9 @@ yarn build
 The server supports configurable repositories and authentication through environment variables:
 
 ```bash
-# Set default repository (optional)
-export MCP_DEFAULT_REPOSITORY="https://github.com/your-org/your-context-repo.git"
-
-# Set access token for private repositories (optional)
-export MCP_ACCESS_TOKEN="ghp_your_github_personal_access_token"
+# Set required environment variables
+export MCP_CONTEXT_BANK_REPOSITORY="https://github.com/your-org/your-context-repo.git"
+export MCP_CONTEXT_BANK_REPOSITORY_PAT="ghp_your_github_personal_access_token"
 ```
 
 If no default repository is configured, you must provide `repository_url` in each tool call.
@@ -66,8 +64,8 @@ Add the MCP server to your VS Code settings. Open VS Code settings (JSON) and ad
         "context-bank": {
           "command": "mcp-context-bank-server",
           "env": {
-            "MCP_DEFAULT_REPOSITORY": "https://github.com/your-org/your-docs.git",
-            "MCP_ACCESS_TOKEN": "ghp_your_token_here"
+            "MCP_CONTEXT_BANK_REPOSITORY": "https://github.com/your-org/your-docs.git",
+            "MCP_CONTEXT_BANK_REPOSITORY_PAT": "ghp_your_token_here"
           }
         }
       }
@@ -104,8 +102,8 @@ Create or update your MCP configuration file (typically `~/.config/amazon-q/mcp-
     "context-bank": {
       "command": "mcp-context-bank-server",
       "env": {
-        "MCP_DEFAULT_REPOSITORY": "https://github.com/your-org/your-context.git",
-        "MCP_ACCESS_TOKEN": "ghp_your_github_token"
+        "MCP_CONTEXT_BANK_REPOSITORY": "https://github.com/your-org/your-context.git",
+        "MCP_CONTEXT_BANK_REPOSITORY_PAT": "ghp_your_github_token"
       }
     }
   }
@@ -130,8 +128,8 @@ For Claude Desktop, add to your configuration file:
     "context-bank": {
       "command": "mcp-context-bank-server",
       "env": {
-        "MCP_DEFAULT_REPOSITORY": "git@github.com:your-org/context-bank.git",
-        "MCP_ACCESS_TOKEN": "your_token_if_needed"
+        "MCP_CONTEXT_BANK_REPOSITORY": "git@github.com:your-org/context-bank.git",
+        "MCP_CONTEXT_BANK_REPOSITORY_PAT": "your_token_if_needed"
       }
     }
   }
@@ -147,17 +145,19 @@ For Claude Desktop, add to your configuration file:
 3. Set the token as an environment variable or pass it in tool calls:
 
 **Option 1: Environment Variable (Recommended)**
+
 ```bash
-export MCP_ACCESS_TOKEN="ghp_your_token_here"
+export MCP_CONTEXT_BANK_REPOSITORY_PAT="ghp_your_token_here"
 ```
 
 **Option 2: Per-request Token**
+
 ```json
 {
   "name": "get_markdown_files",
   "arguments": {
     "repository_url": "https://github.com/your-org/private-repo.git",
-    "access_token": "ghp_your_token_here"
+  "access_token": "ghp_your_token_here" # (parameter name remains for API, but ENV is MCP_CONTEXT_BANK_REPOSITORY_PAT)
   }
 }
 ```
@@ -177,6 +177,7 @@ ssh-add ~/.ssh/id_rsa
 ### Repository Configuration Examples
 
 #### Public Repository
+
 ```json
 {
   "repository_url": "https://github.com/microsoft/vscode.git",
@@ -185,15 +186,17 @@ ssh-add ~/.ssh/id_rsa
 ```
 
 #### Private Repository with HTTPS + PAT
+
 ```json
 {
   "repository_url": "https://github.com/your-org/private-docs.git",
-  "access_token": "ghp_your_token",
+  "access_token": "ghp_your_token", # (parameter name remains for API, but ENV is MCP_CONTEXT_BANK_REPOSITORY_PAT)
   "branch": "main"
 }
 ```
 
 #### Private Repository with SSH
+
 ```json
 {
   "repository_url": "git@github.com:your-org/private-docs.git",
@@ -206,7 +209,7 @@ ssh-add ~/.ssh/id_rsa
 The server communicates via stdio and provides three main tools:
 
 1. **get_markdown_files** - List all markdown files in a repository
-2. **get_file_content** - Get content of a specific file  
+2. **get_file_content** - Get content of a specific file
 3. **search_markdown_content** - Search for text within markdown files
 
 ### Development
@@ -235,8 +238,8 @@ Lists all markdown files in the specified Git repository.
 
 - `repository_url` (optional): Git repository URL (uses default if not provided)
 - `branch` (optional): Git branch to fetch from (default: "main")
-- `path_filter` (optional): Path pattern to filter files (e.g., "docs/", "*.md")
-- `access_token` (optional): Personal Access Token for private repositories
+- `path_filter` (optional): Path pattern to filter files (e.g., "docs/", "\*.md")
+- `access_token` (optional): Personal Access Token for private repositories (if not provided, uses MCP_CONTEXT_BANK_REPOSITORY_PAT env)
 
 **Example Response:**
 
@@ -258,7 +261,7 @@ Retrieves the content of a specific markdown file from the repository.
 - `repository_url` (optional): Git repository URL (uses default if not provided)
 - `file_path` (required): Path to the file within the repository
 - `branch` (optional): Git branch to fetch from (default: "main")
-- `access_token` (optional): Personal Access Token for private repositories
+- `access_token` (optional): Personal Access Token for private repositories (if not provided, uses MCP_CONTEXT_BANK_REPOSITORY_PAT env)
 
 **Example Response:**
 
@@ -284,7 +287,31 @@ Searches for specific content within markdown files in the repository.
 - `case_sensitive` (optional): Whether search should be case sensitive (default: false)
 - `access_token` (optional): Personal Access Token for private repositories
 
-**Example Response:**
+**How it works:**
+
+- For GitHub repositories with a valid access token, uses the GitHub Code Search API for remote search (no clone required).
+- For other repositories, falls back to local search after cloning.
+
+**Example Response (GitHub API):**
+
+```json
+{
+  "repository": "https://github.com/your-org/context-repo.git",
+  "branch": "main",
+  "search_term": "API",
+  "case_sensitive": false,
+  "results": [
+    {
+      "file_path": "docs/api.md",
+      "url": "https://github.com/your-org/context-repo/blob/main/docs/api.md"
+    }
+  ],
+  "total_files_with_matches": 1,
+  "total_matches": 1
+}
+```
+
+**Example Response (local search):**
 
 ```json
 {
@@ -318,7 +345,7 @@ The server can work with any Git repository that contains markdown files. The re
 Set a default repository using environment variables:
 
 ```bash
-export MCP_DEFAULT_REPOSITORY="https://github.com/your-org/your-context-repo.git"
+export MCP_CONTEXT_BANK_REPOSITORY="https://github.com/your-org/your-context-repo.git"
 export MCP_ACCESS_TOKEN="ghp_your_token_if_private"
 ```
 
@@ -349,9 +376,11 @@ export MCP_ACCESS_TOKEN="ghp_your_token_if_private"
 For private repositories, create a PAT with appropriate permissions:
 
 1. **GitHub**: Settings → Developer settings → Personal access tokens → Generate new token
+
    - Required scopes: `repo` (for private repos) or `public_repo` (for public repos)
 
 2. **GitLab**: User Settings → Access Tokens → Add a personal access token
+
    - Required scopes: `read_repository`
 
 3. **Bitbucket**: Personal Bitbucket settings → App passwords → Create app password

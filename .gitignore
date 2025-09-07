@@ -1,10 +1,10 @@
 # Dependencies
 node_modules/
 yarn-error.log
-
-# Build artifacts (uncomment to ignore built files during development)
-# dist/
+npm-debug.log*
 *.tsbuildinfo
+
+dist/
 
 # Environment variables
 .env

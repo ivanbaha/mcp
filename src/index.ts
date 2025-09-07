@@ -15,7 +15,10 @@ import * as os from "os";
 
 // Validation schemas
 const GetMarkdownFilesSchema = z.object({
-  repository_url: z.string().optional().describe("Git repository URL (if not provided, uses default from config)"),
+  repository_url: z
+    .string()
+    .optional()
+    .describe("Git repository URL (if not provided, uses default from config)"),
   branch: z.string().optional().default("main"),
   path_filter: z
     .string()
@@ -25,14 +28,20 @@ const GetMarkdownFilesSchema = z.object({
 });
 
 const GetFileContentSchema = z.object({
-  repository_url: z.string().optional().describe("Git repository URL (if not provided, uses default from config)"),
+  repository_url: z
+    .string()
+    .optional()
+    .describe("Git repository URL (if not provided, uses default from config)"),
   file_path: z.string().min(1, "File path cannot be empty"),
   branch: z.string().optional().default("main"),
   access_token: z.string().optional().describe("Personal Access Token for private repositories"),
 });
 
 const SearchMarkdownSchema = z.object({
-  repository_url: z.string().optional().describe("Git repository URL (if not provided, uses default from config)"),
+  repository_url: z
+    .string()
+    .optional()
+    .describe("Git repository URL (if not provided, uses default from config)"),
   search_term: z.string().min(1, "Search term cannot be empty"),
   branch: z.string().optional().default("main"),
   case_sensitive: z.boolean().optional().default(false),
@@ -46,9 +55,17 @@ class ContextBankServer {
   private defaultAccessToken?: string;
 
   constructor() {
-    // Get default repository and access token from environment variables
-    this.defaultRepository = process.env.MCP_DEFAULT_REPOSITORY || "git@github.com:ivanbaha/context-bank.git";
-    this.defaultAccessToken = process.env.MCP_ACCESS_TOKEN;
+    // Require repository and access token env vars
+    const repoEnv = process.env.MCP_CONTEXT_BANK_REPOSITORY;
+    const tokenEnv = process.env.MCP_CONTEXT_BANK_REPOSITORY_PAT;
+    if (!repoEnv) {
+      throw new Error("MCP_CONTEXT_BANK_REPOSITORY environment variable is required.");
+    }
+    if (!tokenEnv) {
+      throw new Error("MCP_CONTEXT_BANK_REPOSITORY_PAT environment variable is required.");
+    }
+    this.defaultRepository = repoEnv;
+    this.defaultAccessToken = tokenEnv;
 
     this.server = new Server(
       {
@@ -191,7 +208,11 @@ class ContextBankServer {
     });
   }
 
-  private async cloneRepository(url: string, branch: string, accessToken?: string): Promise<string> {
+  private async cloneRepository(
+    url: string,
+    branch: string,
+    accessToken?: string
+  ): Promise<string> {
     const tempDir = path.join(
       os.tmpdir(),
       `context-bank-${Date.now()}-${Math.random().toString(36).substring(7)}`
@@ -199,12 +220,12 @@ class ContextBankServer {
     this.tempDirs.add(tempDir);
 
     const git = simpleGit();
-    
+
     // If access token is provided and URL is HTTPS, inject the token
     let cloneUrl = url;
-    if (accessToken && url.startsWith('https://')) {
+    if (accessToken && url.startsWith("https://")) {
       // Convert https://github.com/owner/repo.git to https://token@github.com/owner/repo.git
-      cloneUrl = url.replace('https://', `https://${accessToken}@`);
+      cloneUrl = url.replace("https://", `https://${accessToken}@`);
     }
 
     await git.clone(cloneUrl, tempDir, ["--depth", "1", "--branch", branch]);
@@ -215,7 +236,9 @@ class ContextBankServer {
   private resolveRepository(providedUrl?: string): string {
     const url = providedUrl || this.defaultRepository;
     if (!url) {
-      throw new Error("No repository URL provided and no default repository configured. Set MCP_DEFAULT_REPOSITORY environment variable or provide repository_url parameter.");
+      throw new Error(
+        "No repository URL provided and no default repository configured. Set MCP_CONTEXT_BANK_REPOSITORY environment variable or provide repository_url parameter."
+      );
     }
     return url;
   }
@@ -225,7 +248,8 @@ class ContextBankServer {
   }
 
   private async getMarkdownFiles(args: unknown) {
-    const { repository_url, branch, path_filter, access_token } = GetMarkdownFilesSchema.parse(args);
+    const { repository_url, branch, path_filter, access_token } =
+      GetMarkdownFilesSchema.parse(args);
 
     const repoUrl = this.resolveRepository(repository_url);
     const accessToken = this.resolveAccessToken(access_token);
@@ -309,24 +333,69 @@ class ContextBankServer {
 
     const repoUrl = this.resolveRepository(repository_url);
     const accessToken = this.resolveAccessToken(access_token);
-    const repoDir = await this.cloneRepository(repoUrl, branch, accessToken);
 
+    // Only use GitHub API for github.com repos
+    const githubMatch = repoUrl.match(/github.com[:/](.+?)\/(.+?)(\.git)?$/);
+    if (githubMatch && accessToken) {
+      const owner = githubMatch[1];
+      const repo = githubMatch[2];
+      const ext = "md";
+      const apiUrl = `https://api.github.com/search/code?q=${encodeURIComponent(
+        search_term
+      )}+repo:${owner}/${repo}+extension:${ext}`;
+      const headers = {
+        Authorization: `token ${accessToken}`,
+        Accept: "application/vnd.github.v3+json",
+      };
+      const fetch = (await import("node-fetch")).default;
+      const response = await fetch(apiUrl, { headers });
+      if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status} ${await response.text()}`);
+      }
+      const data: any = await response.json();
+      // Format results
+      const results = (data.items || []).map((item: any) => ({
+        file_path: item.path,
+        repository: repoUrl,
+        url: item.html_url,
+        // GitHub API does not return line numbers, only file paths
+      }));
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                repository: repoUrl,
+                branch,
+                search_term,
+                case_sensitive,
+                results,
+                total_files_with_matches: results.length,
+                total_matches: results.length,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+    // Fallback to local search for non-GitHub or missing token
+    // ...existing code...
+    const repoDir = await this.cloneRepository(repoUrl, branch, accessToken);
     try {
       const markdownFiles = await this.findMarkdownFiles(repoDir);
       const results = [];
-
+      const searchRegex = new RegExp(
+        search_term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        case_sensitive ? "g" : "gi"
+      );
       for (const filePath of markdownFiles) {
         const fullPath = path.join(repoDir, filePath);
         const content = await fs.readFile(fullPath, "utf-8");
-
-        const searchRegex = new RegExp(
-          search_term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-          case_sensitive ? "g" : "gi"
-        );
-
         const lines = content.split("\n");
         const matches = [];
-
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           if (searchRegex.test(line)) {
@@ -336,7 +405,6 @@ class ContextBankServer {
             });
           }
         }
-
         if (matches.length > 0) {
           results.push({
             file_path: filePath,
@@ -345,7 +413,6 @@ class ContextBankServer {
           });
         }
       }
-
       return {
         content: [
           {
